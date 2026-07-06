@@ -1,0 +1,7 @@
+/bin/
+*.out
+.DS_Store
+
+# 一次性开发脚手架，不公开（含本地路径）
+/docs/PROMPT_FOR_CLAUDE_CODE.md
+/docs/PROMPT_FOR_CODEX_REVIEW.md
