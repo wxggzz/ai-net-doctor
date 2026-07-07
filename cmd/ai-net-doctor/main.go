@@ -8,6 +8,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/wxggzz/ai-net-doctor/internal/model"
@@ -25,6 +28,7 @@ func main() {
 		direct     = flag.Bool("direct", false, "force direct connection (ignore proxy)")
 		proxyMode  = flag.String("proxy", "", "force proxy path: env | system")
 		menubar    = flag.Bool("menubar", false, "SwiftBar/xbar menu-bar output (colored dot + dropdown)")
+		htmlOut    = flag.Bool("html", false, "write a self-contained HTML report and open it in the browser")
 		showVer    = flag.Bool("version", false, "print version and exit")
 	)
 	flag.Parse()
@@ -61,6 +65,17 @@ func main() {
 		self, _ := os.Executable()
 		fmt.Print(report.MenuBar(rep, order, self))
 		return // menu-bar plugins should always exit 0
+	}
+
+	if *htmlOut {
+		path := filepath.Join(os.TempDir(), fmt.Sprintf("ai-net-doctor-%d.html", time.Now().Unix()))
+		if err := os.WriteFile(path, []byte(report.HTML(rep, order)), 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		fmt.Println(path)
+		openBrowser(path)
+		os.Exit(verdict.ExitCode(overallVerdict(rep, order)))
 	}
 
 	if *jsonOut {
@@ -105,6 +120,22 @@ func resolveMode(direct bool, proxyMode string) (string, error) {
 	default:
 		return "", fmt.Errorf("invalid --proxy: use env | system")
 	}
+}
+
+// openBrowser opens path in the default browser, best-effort (errors ignored —
+// the file path is always printed so the user can open it manually).
+func openBrowser(path string) {
+	var cmd string
+	var args []string
+	switch runtime.GOOS {
+	case "darwin":
+		cmd, args = "open", []string{path}
+	case "windows":
+		cmd, args = "cmd", []string{"/c", "start", "", path}
+	default:
+		cmd, args = "xdg-open", []string{path}
+	}
+	_ = exec.Command(cmd, args...).Start()
 }
 
 func overallVerdict(rep model.Report, order []string) model.Verdict {

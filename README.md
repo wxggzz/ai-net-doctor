@@ -102,7 +102,12 @@ ai-net-doctor --direct           # force direct (ignore proxies)
 ai-net-doctor --proxy env        # force the env-var proxy (HTTPS_PROXY/...)
 ai-net-doctor --proxy system     # force the macOS system proxy (scutil --proxy)
 ai-net-doctor --menubar          # SwiftBar/xbar menu-bar output (colored dot + dropdown)
+ai-net-doctor --html             # write a self-contained HTML report and open it in the browser
 ```
+
+**Visual report**: `--html` renders a dependency-free page (cards per target,
+colored verdicts, layer waterfall) and opens it in your browser — or just
+double-click `scripts/ai-net-doctor-report.command` on macOS.
 
 Without a forced path, it auto-selects: env proxy if `HTTPS_PROXY` /
 `HTTP_PROXY` / `ALL_PROXY` is set, else direct. **A forced proxy path never
