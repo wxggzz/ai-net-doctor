@@ -37,6 +37,23 @@ cp -r integrations/codex/codex-network-doctor ~/plugins/
 
 Then ask Codex to "run a network diagnostic for Codex and Claude".
 
+## Menu bar (SwiftBar) — a dot you click
+
+A colored dot in your macOS menu bar (🟢 all OK · 🟡 reachable, auth not
+verified · 🔴 something broke); click it for per-target status and quick actions.
+
+1. Install [SwiftBar](https://swiftbar.app) (free) and the CLI.
+2. Copy the plugin into your SwiftBar plugin folder and keep it executable:
+
+   ```bash
+   cp integrations/swiftbar/ai-net-doctor.10m.sh "$SWIFTBAR_PLUGIN_FOLDER"/
+   chmod +x "$SWIFTBAR_PLUGIN_FOLDER"/ai-net-doctor.10m.sh
+   ```
+
+   The `10m` in the filename is the refresh interval (rename to `.5m.`, `.1h.`,
+   etc.). The plugin just runs `ai-net-doctor --menubar`, which the CLI renders
+   directly — no jq/python needed. `xbar` works too (same format).
+
 ## The contract
 
 - **Single source of truth**: `ai-net-doctor --target all --json`.

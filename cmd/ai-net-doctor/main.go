@@ -24,6 +24,7 @@ func main() {
 		budgetSec  = flag.Int("budget", 15, "total time budget in seconds")
 		direct     = flag.Bool("direct", false, "force direct connection (ignore proxy)")
 		proxyMode  = flag.String("proxy", "", "force proxy path: env | system")
+		menubar    = flag.Bool("menubar", false, "SwiftBar/xbar menu-bar output (colored dot + dropdown)")
 		showVer    = flag.Bool("version", false, "print version and exit")
 	)
 	flag.Parse()
@@ -55,6 +56,12 @@ func main() {
 		Budget:    time.Duration(*budgetSec) * time.Second,
 		ForceMode: forceMode,
 	})
+
+	if *menubar {
+		self, _ := os.Executable()
+		fmt.Print(report.MenuBar(rep, order, self))
+		return // menu-bar plugins should always exit 0
+	}
 
 	if *jsonOut {
 		out, err := report.JSON(rep)

@@ -101,6 +101,7 @@ ai-net-doctor --budget 20        # total time budget in seconds (default 15)
 ai-net-doctor --direct           # force direct (ignore proxies)
 ai-net-doctor --proxy env        # force the env-var proxy (HTTPS_PROXY/...)
 ai-net-doctor --proxy system     # force the macOS system proxy (scutil --proxy)
+ai-net-doctor --menubar          # SwiftBar/xbar menu-bar output (colored dot + dropdown)
 ```
 
 Without a forced path, it auto-selects: env proxy if `HTTPS_PROXY` /
@@ -153,6 +154,8 @@ they never re-derive the verdict. Both ship in this repo under
   ([`integrations/claude-code/`](./integrations/claude-code/network-doctor/)).
 - **Codex**: a personal plugin
   ([`integrations/codex/`](./integrations/codex/codex-network-doctor/)).
+- **macOS menu bar**: a SwiftBar/xbar dot you click — 🟢/🟡/🔴 for Codex & Claude
+  ([`integrations/swiftbar/`](./integrations/swiftbar/)).
 
 See [integrations/README.md](./integrations/README.md) for install steps.
 
