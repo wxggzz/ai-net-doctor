@@ -12,9 +12,9 @@ and **Claude/Anthropic** — and if not, exactly which layer broke
 
 > 中文说明见 [README.zh-CN.md](./README.zh-CN.md)。
 
-<!-- Optional GIF demo. Run `vhs docs/demo.tape` to generate docs/demo.gif, then uncomment:
-![ai-net-doctor demo](docs/demo.gif)
--->
+<p align="center"><img src="docs/demo.svg" alt="ai-net-doctor diagnosing Codex and Claude connectivity" width="720"></p>
+
+<sub>Static preview — run <code>vhs docs/demo.tape</code> to regenerate an animated <code>docs/demo.gif</code>.</sub>
 
 ```text
 ai-net-doctor 0.1.0  —  auto-selected path: direct
@@ -61,19 +61,32 @@ verdict plus the first breakpoint.
 
 ## Install
 
+**Homebrew** (macOS / Linux):
+
 ```bash
-# Go 1.22+
+brew install wxggzz/tap/ai-net-doctor
+```
+
+**One-line script** (macOS / Linux — downloads the release binary):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/wxggzz/ai-net-doctor/main/scripts/install.sh | sh
+```
+
+**Go** (1.22+):
+
+```bash
 go install github.com/wxggzz/ai-net-doctor/cmd/ai-net-doctor@latest
 ```
 
-Or grab a prebuilt binary from
-[Releases](https://github.com/wxggzz/ai-net-doctor/releases) (macOS /
-Linux / Windows), or build from source:
+**Prebuilt binaries** for macOS / Linux / Windows are on the
+[Releases](https://github.com/wxggzz/ai-net-doctor/releases) page.
+
+**From source**:
 
 ```bash
 git clone https://github.com/wxggzz/ai-net-doctor
-cd ai-net-doctor
-go build -o ./bin/ai-net-doctor ./cmd/ai-net-doctor
+cd ai-net-doctor && go build -o ./bin/ai-net-doctor ./cmd/ai-net-doctor
 ```
 
 ## Usage

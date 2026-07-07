@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 470" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace" font-size="13">
+  <rect x="0.5" y="0.5" width="759" height="469" rx="10" fill="#0d1117" stroke="#30363d"/>
+  <circle cx="22" cy="22" r="6" fill="#ff5f56"/>
+  <circle cx="42" cy="22" r="6" fill="#ffbd2e"/>
+  <circle cx="62" cy="22" r="6" fill="#27c93f"/>
+  <text x="380" y="26" fill="#8b949e" text-anchor="middle" font-size="12">ai-net-doctor</text>
+  <line x1="0" y1="42" x2="760" y2="42" stroke="#21262d"/>
+  <g xml:space="preserve">
+    <text x="18" y="66"><tspan fill="#58a6ff">$</tspan> <tspan fill="#c9d1d9">ai-net-doctor --verbose</tspan></text>
+
+    <text x="18" y="108" fill="#c9d1d9">ai-net-doctor 0.1.0  —  auto-selected path: <tspan fill="#58a6ff">direct</tspan></text>
+    <text x="18" y="129" fill="#d29922">  ⚠  system proxy on but no env proxy — browser may work while the CLI goes direct</text>
+    <text x="18" y="150" fill="#d29922">  ⚠  transparent proxy / TUN (fake-ip) suspected — the "direct" result may be tunneled</text>
+
+    <text x="18" y="192"><tspan fill="#d29922">⚠  CHECK  </tspan><tspan fill="#c9d1d9" font-weight="bold">Codex / OpenAI</tspan></text>
+    <text x="18" y="213" fill="#8b949e">        Network fully reachable (DNS/TCP/TLS/HTTP all up); a 401 is expected.</text>
+    <text x="18" y="234" fill="#8b949e">        → if it still errors, it's auth/quota, not the network.</text>
+    <text x="18" y="255"><tspan fill="#3fb950">          ✓ dns </tspan><tspan fill="#6e7681">   2ms   </tspan><tspan fill="#58a6ff">198.18.0.17</tspan></text>
+    <text x="18" y="276"><tspan fill="#3fb950">          ✓ tcp </tspan><tspan fill="#6e7681">   2ms   </tspan><tspan fill="#8b949e">connected</tspan></text>
+    <text x="18" y="297"><tspan fill="#3fb950">          ✓ tls </tspan><tspan fill="#6e7681">   332ms </tspan><tspan fill="#8b949e">TLS 1.3 ok</tspan></text>
+    <text x="18" y="318"><tspan fill="#3fb950">          ✓ http</tspan><tspan fill="#6e7681">   588ms </tspan><tspan fill="#8b949e">HTTP 401</tspan></text>
+    <text x="18" y="339"><tspan fill="#3fb950">          ✓ auth</tspan><tspan fill="#6e7681">   0ms   </tspan><tspan fill="#8b949e">reachable; HTTP 401 (no credentials sent)</tspan></text>
+
+    <text x="18" y="381"><tspan fill="#d29922">⚠  CHECK  </tspan><tspan fill="#c9d1d9" font-weight="bold">Claude Code / Anthropic</tspan></text>
+    <text x="18" y="402"><tspan fill="#3fb950">          ✓ dns → tcp → tls → http → auth</tspan><tspan fill="#8b949e">   all up</tspan></text>
+
+    <text x="18" y="444" fill="#c9d1d9">Overall: <tspan fill="#d29922" font-weight="bold">⚠  CHECK</tspan></text>
+  </g>
+</svg>
