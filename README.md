@@ -146,12 +146,15 @@ macOS-only today; on Linux/Windows use `--proxy env` or `--direct`.
 ## Editor / agent integration
 
 The same CLI backs two thin skills that only call it and translate the JSON —
-they never re-derive the verdict:
+they never re-derive the verdict. Both ship in this repo under
+[`integrations/`](./integrations/):
 
-- **Claude Code**: a `/network-doctor` skill.
-- **Codex**: a personal plugin (`codex-network-doctor`).
+- **Claude Code**: a `/network-doctor` skill
+  ([`integrations/claude-code/`](./integrations/claude-code/network-doctor/)).
+- **Codex**: a personal plugin
+  ([`integrations/codex/`](./integrations/codex/codex-network-doctor/)).
 
-See [docs/INTEGRATIONS.md](./docs/INTEGRATIONS.md).
+See [integrations/README.md](./integrations/README.md) for install steps.
 
 ## Reason codes (JSON `reason_code`)
 

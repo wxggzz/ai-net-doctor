@@ -1,0 +1,18 @@
+{
+  "name": "codex-network-doctor",
+  "version": "0.2.0",
+  "description": "Layered network diagnostics for Codex/OpenAI and Claude/Anthropic connectivity, powered by the ai-net-doctor CLI.",
+  "author": {
+    "name": "wxggzz"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Codex Network Doctor",
+    "shortDescription": "Diagnose VPN, DNS, proxy, TLS, and Codex/Claude connectivity.",
+    "longDescription": "Runs the ai-net-doctor CLI to test, along the client's real network path (direct / env proxy / macOS system proxy), whether Codex/OpenAI and Claude/Anthropic are reachable. Localizes the first broken layer (DNS/TCP/TLS/HTTP/auth/proxy), distinguishes network failures from auth/quota issues, and flags proxy pitfalls (NO_PROXY bypass, env vs system proxy divergence, transparent TUN/fake-ip). The skill only calls the CLI and translates its JSON — it never re-derives the verdict.",
+    "developerName": "wxggzz",
+    "category": "Productivity",
+    "capabilities": [],
+    "defaultPrompt": "Run a network diagnostic for Codex and Claude and summarize whether the network is the problem."
+  }
+}
