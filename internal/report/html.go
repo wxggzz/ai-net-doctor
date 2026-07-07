@@ -10,48 +10,58 @@ import (
 )
 
 // HTML renders a self-contained, dependency-free report page (inline CSS, no
-// external fonts/scripts/images) suitable for opening in a browser. It is
-// display-only: every conclusion still comes from the CLI.
+// external fonts/scripts/images) themed as a connectivity "vitals" panel: each
+// target's layered probe is drawn as a signal path that flows green to the
+// first break. It is display-only; every conclusion comes from the CLI.
 func HTML(r model.Report, order []string) string {
 	v := buildHTMLView(r, order)
 	var buf bytes.Buffer
 	if err := htmlTemplate.Execute(&buf, v); err != nil {
-		// Templates are static; an error here is a programming bug. Fall back to
-		// a minimal page rather than crashing a double-click entry point.
 		return "<!doctype html><meta charset=utf-8><pre>" + template.HTMLEscapeString(err.Error()) + "</pre>"
 	}
 	return buf.String()
 }
 
 type htmlView struct {
-	Version     string
-	GeneratedAt string
-	Overall     string
-	OverallDot  string
-	PathLabel   string
-	PathDesc    string
-	Warnings    []string
-	Targets     []htmlTarget
+	Version         string
+	GeneratedAt     string
+	Overall         string // verdict word (OK/CHECK/FAIL)
+	OverallState    string // ok/check/fail
+	OverallTitle    string // plain-language headline
+	OverallSubtitle string
+	PathDesc        string
+	Advisories      []string
+	Targets         []htmlTarget
 }
 
 type htmlTarget struct {
-	Name        string
-	Verdict     string
-	Class       string
-	Dot         string
-	Summary     string
-	Remediation string
-	NoProxyNote string
-	Checks      []htmlCheck
+	Name         string
+	Verdict      string
+	State        string
+	Latency      string
+	Summary      string
+	Remediation  string
+	NoProxyNote  string
+	ErrorCallout string
+	Nodes        []htmlNode
+	Raw          []htmlCheck
+}
+
+type htmlNode struct {
+	Layer      string // uppercased acronym
+	State      string // ok/fail/skip
+	Mark       string // ✓ / ✕ / –
+	Ring       bool   // reached but not verified (auth on CHECK)
+	Timing     string
+	LinkActive bool // the connector leading into this node is "live" (green)
 }
 
 type htmlCheck struct {
-	Layer      string
-	Mark       string
-	MarkClass  string
-	Timing     string
-	Detail     string
-	Breakpoint bool
+	Layer     string
+	Mark      string
+	MarkClass string
+	Timing    string
+	Detail    string
 }
 
 func buildHTMLView(r model.Report, order []string) htmlView {
@@ -63,12 +73,9 @@ func buildHTMLView(r model.Report, order []string) htmlView {
 	}
 	overall := verdict.WorstVerdict(verdicts...)
 
-	pathLabel := "自动选择路径"
-	if r.NetworkPath.Forced {
-		pathLabel = "请求路径"
-	}
+	title, sub := overallCopy(overall)
 
-	var warnings []string
+	var advisories []string
 	for _, w := range r.Warnings {
 		text := verdict.Explain(model.ReasonCode(w)).Summary
 		if text == "" {
@@ -77,7 +84,7 @@ func buildHTMLView(r model.Report, order []string) htmlView {
 		if w == string(model.ReasonTransparentProxySuspected) && r.NetworkPath.TransparentProxyHint != "" {
 			text += "（依据：" + r.NetworkPath.TransparentProxyHint + "）"
 		}
-		warnings = append(warnings, text)
+		advisories = append(advisories, text)
 	}
 
 	var targets []htmlTarget
@@ -90,50 +97,90 @@ func buildHTMLView(r model.Report, order []string) htmlView {
 		t := htmlTarget{
 			Name:        displayName(name),
 			Verdict:     string(res.Verdict),
-			Class:       verdictClass(res.Verdict),
-			Dot:         dot(res.Verdict),
+			State:       verdictClass(res.Verdict),
+			Latency:     fmtLatency(res.LatencyMs),
 			Summary:     ex.Summary,
 			Remediation: ex.Remediation,
 		}
 		if res.NoProxyExcluded {
-			t.NoProxyNote = "NO_PROXY 排除了 " + res.Host + "，该 target 实际未走代理，而是 direct。"
+			t.NoProxyNote = "NO_PROXY 排除了 " + res.Host + "，该 target 实际未走代理，而是直连。"
 		}
+
 		var failed model.Layer
 		if res.FailedLayer != nil {
 			failed = *res.FailedLayer
 		}
+		prevOK := false
 		for _, c := range res.Checks {
-			hc := htmlCheck{Layer: string(c.Layer)}
+			// Signal-path node.
+			n := htmlNode{Layer: upperLayer(c.Layer), LinkActive: prevOK}
 			switch {
 			case c.Skipped:
-				hc.Mark, hc.MarkClass = "—", "skip"
+				n.State, n.Mark = "skip", "–"
 			case c.OK:
-				hc.Mark, hc.MarkClass = "✓", "ok"
+				n.State, n.Mark = "ok", "✓"
 			default:
-				hc.Mark, hc.MarkClass = "✗", "fail"
+				n.State, n.Mark = "fail", "✕"
 			}
 			if !c.Skipped {
-				hc.Timing = fmt.Sprintf("%dms", c.ElapsedMs)
+				n.Timing = fmt.Sprintf("%dms", c.ElapsedMs)
 			}
-			hc.Detail = c.Detail
+			// Auth reached but not verified (CHECK): green node with an amber ring.
+			if res.Verdict == model.VerdictCheck && c.Layer == model.LayerAuth && c.OK {
+				n.Ring = true
+			}
+			t.Nodes = append(t.Nodes, n)
+			prevOK = n.State == "ok"
+
+			// Raw waterfall row.
+			rc := htmlCheck{Layer: string(c.Layer), Timing: n.Timing}
+			switch {
+			case c.Skipped:
+				rc.Mark, rc.MarkClass = "—", "skip"
+			case c.OK:
+				rc.Mark, rc.MarkClass = "✓", "ok"
+			default:
+				rc.Mark, rc.MarkClass = "✗", "fail"
+			}
+			rc.Detail = c.Detail
 			if c.Error != "" {
-				hc.Detail = c.Error
+				rc.Detail = c.Error
 			}
-			hc.Breakpoint = !c.Skipped && !c.OK && res.Verdict == model.VerdictFail && c.Layer == failed
-			t.Checks = append(t.Checks, hc)
+			t.Raw = append(t.Raw, rc)
+
+			// Error callout = the breakpoint's detail (FAIL only).
+			if res.Verdict == model.VerdictFail && !c.Skipped && !c.OK && c.Layer == failed {
+				if c.Error != "" {
+					t.ErrorCallout = c.Error
+				} else {
+					t.ErrorCallout = c.Detail
+				}
+			}
 		}
 		targets = append(targets, t)
 	}
 
 	return htmlView{
-		Version:     r.Host.ToolVersion,
-		GeneratedAt: r.GeneratedAt,
-		Overall:     string(overall),
-		OverallDot:  dot(overall),
-		PathLabel:   pathLabel,
-		PathDesc:    pathModeDesc(r.NetworkPath.Mode, r.NetworkPath),
-		Warnings:    warnings,
-		Targets:     targets,
+		Version:         r.Host.ToolVersion,
+		GeneratedAt:     r.GeneratedAt,
+		Overall:         string(overall),
+		OverallState:    verdictClass(overall),
+		OverallTitle:    title,
+		OverallSubtitle: sub,
+		PathDesc:        pathModeDesc(r.NetworkPath.Mode, r.NetworkPath),
+		Advisories:      advisories,
+		Targets:         targets,
+	}
+}
+
+func overallCopy(v model.Verdict) (title, sub string) {
+	switch v {
+	case model.VerdictOK:
+		return "全部可用", "Codex 与 Claude 均可正常访问。"
+	case model.VerdictFail:
+		return "连接受阻", "有目标不可达——见下方链路断点。"
+	default:
+		return "网络可达", "链路全通；返回 401 属正常——诊断不会使用你的密钥，问题若有在认证或额度。"
 	}
 }
 
@@ -150,81 +197,192 @@ func verdictClass(v model.Verdict) string {
 	}
 }
 
+func upperLayer(l model.Layer) string {
+	switch l {
+	case model.LayerDNS:
+		return "DNS"
+	case model.LayerTCP:
+		return "TCP"
+	case model.LayerTLS:
+		return "TLS"
+	case model.LayerHTTP:
+		return "HTTP"
+	case model.LayerAuth:
+		return "AUTH"
+	case model.LayerProxy:
+		return "PROXY"
+	default:
+		return string(l)
+	}
+}
+
+func fmtLatency(ms int64) string {
+	if ms <= 0 {
+		return "—"
+	}
+	if ms < 1000 {
+		return fmt.Sprintf("%d ms", ms)
+	}
+	return fmt.Sprintf("%.1f s", float64(ms)/1000)
+}
+
 var htmlTemplate = template.Must(template.New("report").Parse(`<!doctype html>
 <html lang="zh">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ai-net-doctor 报告</title>
+<title>ai-net-doctor · 连通性报告</title>
 <style>
-  :root {
-    --bg: #f6f8fa; --card: #ffffff; --fg: #1f2328; --muted: #6e7781;
-    --border: #d0d7de; --ok: #2ea043; --check: #bf8700; --fail: #cf222e; --skip: #8c959f;
-    --shadow: 0 1px 3px rgba(0,0,0,.08);
+  :root{
+    --bg:#0b0f18; --grid:#111726; --panel:#131b2b; --inset:#0e1523; --border:#243149;
+    --text:#e7edf7; --muted:#8493ad; --faint:#4a5878; --track:#2b3854;
+    --ok:#34d399; --warn:#f4c150; --fail:#fb6f6c;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
   }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg:#0d1117; --card:#161b22; --fg:#e6edf3; --muted:#8b949e;
-      --border:#30363d; --ok:#3fb950; --check:#d29922; --fail:#f85149; --skip:#6e7681;
-      --shadow: 0 1px 3px rgba(0,0,0,.4); }
+  @media (prefers-color-scheme: light){
+    :root{ --bg:#eef1f7; --grid:#e5e9f2; --panel:#ffffff; --inset:#f3f6fb; --border:#d9e0ee;
+      --text:#16202f; --muted:#586178; --faint:#95a0b6; --track:#d3dbea;
+      --ok:#0f9d63; --warn:#b07d13; --fail:#d94643; }
   }
-  * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--fg);
-    font-family: ui-sans-serif,-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
-    line-height:1.55; padding:24px; }
-  .wrap { max-width:760px; margin:0 auto; }
-  header { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:4px; }
-  h1 { font-size:20px; margin:0; font-weight:650; }
-  .sub { color:var(--muted); font-size:13px; }
-  .overall { font-size:15px; font-weight:600; margin:12px 0 20px; }
-  .banner { background:var(--card); border:1px solid var(--border); border-left:4px solid var(--check);
-    border-radius:8px; padding:10px 14px; margin:8px 0; font-size:14px; box-shadow:var(--shadow); }
-  .card { background:var(--card); border:1px solid var(--border); border-radius:10px;
-    padding:16px 18px; margin:14px 0; box-shadow:var(--shadow); border-left:5px solid var(--skip); }
-  .card.ok { border-left-color:var(--ok); }
-  .card.check { border-left-color:var(--check); }
-  .card.fail { border-left-color:var(--fail); }
-  .card h2 { font-size:16px; margin:0 0 6px; display:flex; align-items:center; gap:8px; }
-  .badge { font-size:12px; font-weight:700; padding:2px 8px; border-radius:999px; color:#fff; }
-  .badge.ok { background:var(--ok); } .badge.check { background:var(--check); } .badge.fail { background:var(--fail); }
-  .summary { font-size:14px; margin:6px 0; }
-  .rem { font-size:13px; color:var(--muted); margin:6px 0; }
-  .noproxy { font-size:13px; color:var(--fail); margin:6px 0; }
-  .fall { font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12.5px;
-    margin-top:10px; border-top:1px solid var(--border); padding-top:10px; overflow-x:auto; }
-  .row { display:flex; gap:10px; white-space:nowrap; padding:1px 0; }
-  .mk { width:1.2em; text-align:center; }
-  .mk.ok { color:var(--ok); } .mk.fail { color:var(--fail); } .mk.skip { color:var(--skip); }
-  .lyr { width:3.5em; color:var(--muted); }
-  .tm { width:5em; color:var(--skip); text-align:right; }
-  .dt { color:var(--fg); }
-  .brk { color:var(--fail); font-weight:700; margin-left:6px; }
-  footer { color:var(--muted); font-size:12px; margin-top:22px; text-align:center; }
-  footer a { color:var(--muted); }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:
+      radial-gradient(1100px 500px at 50% -10%, var(--grid), transparent 70%), var(--bg);
+    color:var(--text);font-family:var(--sans);line-height:1.55;
+    padding:28px 20px 40px;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:720px;margin:0 auto}
+  a{color:inherit}
+
+  header{display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding-bottom:14px;border-bottom:1px solid var(--border);margin-bottom:22px}
+  .brand{display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:14px;letter-spacing:.02em}
+  .brand .ver{color:var(--faint);font-size:12px}
+  .dotpulse{width:9px;height:9px;border-radius:50%;background:var(--muted);position:relative}
+  .dotpulse.ok{background:var(--ok)} .dotpulse.check{background:var(--warn)} .dotpulse.fail{background:var(--fail)}
+  .meta{font-family:var(--mono);font-size:11.5px;color:var(--faint)}
+
+  .hero{margin:4px 0 24px}
+  .hero .pill{vertical-align:middle}
+  .hero h1{display:inline-block;margin:0 0 0 10px;font-size:26px;font-weight:680;letter-spacing:-.01em;vertical-align:middle}
+  .hero-sub{margin:12px 0 14px;color:var(--muted);font-size:14.5px;max-width:56ch}
+  .chip{display:inline-block;font-family:var(--mono);font-size:11px;letter-spacing:.06em;
+    color:var(--muted);background:var(--inset);border:1px solid var(--border);
+    border-radius:999px;padding:4px 11px}
+
+  .pill{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.12em;
+    padding:4px 9px;border-radius:6px;color:#08111f}
+  .pill.ok{background:var(--ok)} .pill.check{background:var(--warn)} .pill.fail{background:var(--fail);color:#fff}
+
+  .eyebrow{font-family:var(--mono);font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;
+    color:var(--faint);margin:0 0 10px}
+
+  .advisories{margin:0 0 22px}
+  .adv{display:flex;gap:10px;font-size:13.5px;color:var(--text);padding:9px 13px;margin:7px 0;
+    background:var(--inset);border:1px solid var(--border);border-left:3px solid var(--warn);border-radius:8px}
+  .adv::before{content:"▲";color:var(--warn);font-size:11px;line-height:1.5}
+
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:14px;
+    padding:18px 20px;margin:16px 0;position:relative;overflow:hidden}
+  .panel::before{content:"";position:absolute;inset:0 auto 0 0;width:3px;background:var(--faint)}
+  .panel.ok::before{background:var(--ok)} .panel.check::before{background:var(--warn)} .panel.fail::before{background:var(--fail)}
+  .p-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:16px}
+  .p-head h2{margin:0;font-size:16.5px;font-weight:640}
+  .p-meta{display:flex;align-items:center;gap:10px}
+  .lat{font-family:var(--mono);font-size:12px;color:var(--muted)}
+
+  /* signature: the signal path */
+  .path{display:flex;align-items:flex-start;gap:0;overflow-x:auto;padding:4px 2px 2px;scrollbar-width:none}
+  .path::-webkit-scrollbar{display:none}
+  .node{flex:1 0 auto;min-width:66px;display:flex;flex-direction:column;align-items:center;gap:7px;position:relative}
+  .node:not(:first-child)::before{content:"";position:absolute;left:-50%;top:12px;width:100%;height:2px;
+    background:var(--track);z-index:0}
+  .node.link:not(:first-child)::before{background:var(--ok)}
+  .node .mk{position:relative;z-index:1;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;
+    border:2px solid var(--faint);background:var(--panel);font-size:13px;font-weight:700}
+  .node.ok .mk{border-color:var(--ok);color:var(--ok)}
+  .node.fail .mk{border-color:var(--fail);background:var(--fail);color:#fff}
+  .node.skip .mk{border-style:dashed;color:var(--faint)}
+  .node.ring .mk{box-shadow:0 0 0 3px color-mix(in srgb,var(--warn) 34%,transparent)}
+  .node .lyr{font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.14em;color:var(--muted)}
+  .node .tm{font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+
+  .summary{font-size:14px;margin:16px 0 0}
+  .callout{font-family:var(--mono);font-size:12.5px;color:var(--fail);background:color-mix(in srgb,var(--fail) 10%,transparent);
+    border:1px solid color-mix(in srgb,var(--fail) 35%,transparent);border-radius:8px;padding:9px 12px;margin-top:10px;
+    overflow-x:auto}
+  .note{font-size:13px;color:var(--fail);margin:10px 0 0}
+  .rem{font-size:13px;color:var(--muted);margin:10px 0 0}
+
+  details.raw{margin-top:14px;border-top:1px solid var(--border);padding-top:10px}
+  details.raw summary{cursor:pointer;font-family:var(--mono);font-size:11px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--faint);list-style:none}
+  details.raw summary::-webkit-details-marker{display:none}
+  details.raw summary::before{content:"▸ ";color:var(--faint)}
+  details.raw[open] summary::before{content:"▾ "}
+  .rawlist{font-family:var(--mono);font-size:12px;margin-top:10px}
+  .rrow{display:flex;gap:10px;white-space:nowrap;padding:1.5px 0}
+  .rmk{width:1.2em;text-align:center}
+  .rmk.ok{color:var(--ok)} .rmk.fail{color:var(--fail)} .rmk.skip{color:var(--faint)}
+  .rlyr{width:3.6em;color:var(--muted)}
+  .rtm{width:5em;text-align:right;color:var(--faint)}
+  .rdt{color:var(--text)}
+
+  footer{margin-top:26px;padding-top:14px;border-top:1px solid var(--border);
+    color:var(--faint);font-size:12px;text-align:center}
+  footer a{color:var(--muted);text-decoration:none;border-bottom:1px solid var(--border)}
+
+  @media (prefers-reduced-motion: no-preference){
+    .panel{animation:rise .5s cubic-bezier(.2,.7,.2,1) both}
+    .panel:nth-child(2){animation-delay:.05s}
+    @keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+    .dotpulse.ok::after,.dotpulse.check::after,.dotpulse.fail::after{content:"";position:absolute;inset:0;
+      border-radius:50%;background:inherit;animation:pulse 2.4s ease-out infinite}
+    @keyframes pulse{from{opacity:.55;transform:scale(1)}to{opacity:0;transform:scale(2.6)}}
+  }
+  @media (max-width:480px){ .hero h1{font-size:22px} body{padding:20px 14px 32px} }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <h1>ai-net-doctor <span class="sub">v{{.Version}}</span></h1>
-    <span class="sub">{{.GeneratedAt}}</span>
+    <div class="brand"><span class="dotpulse {{.OverallState}}"></span>ai-net-doctor <span class="ver">v{{.Version}}</span></div>
+    <div class="meta">{{.GeneratedAt}}</div>
   </header>
-  <div class="sub">{{.PathLabel}}：{{.PathDesc}}</div>
-  <div class="overall">总体：{{.OverallDot}} {{.Overall}}</div>
 
-  {{range .Warnings}}<div class="banner">⚠️ {{.}}</div>{{end}}
+  <section class="hero">
+    <span class="pill {{.OverallState}}">{{.Overall}}</span><h1>{{.OverallTitle}}</h1>
+    <p class="hero-sub">{{.OverallSubtitle}}</p>
+    <span class="chip">路径 · {{.PathDesc}}</span>
+  </section>
 
-  {{range .Targets}}
-  <div class="card {{.Class}}">
-    <h2>{{.Dot}} {{.Name}} <span class="badge {{.Class}}">{{.Verdict}}</span></h2>
-    <div class="summary">{{.Summary}}</div>
-    {{if .NoProxyNote}}<div class="noproxy">⚠️ {{.NoProxyNote}}</div>{{end}}
-    {{if .Remediation}}<div class="rem">→ {{.Remediation}}</div>{{end}}
-    <div class="fall">
-      {{range .Checks}}<div class="row"><span class="mk {{.MarkClass}}">{{.Mark}}</span><span class="lyr">{{.Layer}}</span><span class="tm">{{.Timing}}</span><span class="dt">{{.Detail}}{{if .Breakpoint}}<span class="brk">← 断点</span>{{end}}</span></div>
-      {{end}}
-    </div>
-  </div>
+  {{if .Advisories}}
+  <section class="advisories">
+    <p class="eyebrow">提示 · advisories</p>
+    {{range .Advisories}}<div class="adv">{{.}}</div>{{end}}
+  </section>
   {{end}}
+
+  <section>
+    {{range .Targets}}
+    <article class="panel {{.State}}">
+      <div class="p-head">
+        <h2>{{.Name}}</h2>
+        <div class="p-meta"><span class="lat">{{.Latency}}</span><span class="pill {{.State}}">{{.Verdict}}</span></div>
+      </div>
+      <div class="path">
+        {{range .Nodes}}<div class="node {{.State}}{{if .Ring}} ring{{end}}{{if .LinkActive}} link{{end}}"><span class="mk">{{.Mark}}</span><span class="lyr">{{.Layer}}</span><span class="tm">{{.Timing}}</span></div>{{end}}
+      </div>
+      <p class="summary">{{.Summary}}</p>
+      {{if .ErrorCallout}}<div class="callout">{{.ErrorCallout}}</div>{{end}}
+      {{if .NoProxyNote}}<p class="note">⚠ {{.NoProxyNote}}</p>{{end}}
+      {{if .Remediation}}<p class="rem">→ {{.Remediation}}</p>{{end}}
+      <details class="raw"><summary>原始分层数据</summary>
+        <div class="rawlist">{{range .Raw}}<div class="rrow"><span class="rmk {{.MarkClass}}">{{.Mark}}</span><span class="rlyr">{{.Layer}}</span><span class="rtm">{{.Timing}}</span><span class="rdt">{{.Detail}}</span></div>{{end}}</div>
+      </details>
+    </article>
+    {{end}}
+  </section>
 
   <footer>
     诊断不发送你的密钥；结论由 ai-net-doctor CLI 计算，本页仅展示。<br>
