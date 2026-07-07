@@ -44,7 +44,22 @@ type htmlTarget struct {
 	NoProxyNote  string
 	ErrorCallout string
 	Nodes        []htmlNode
+	Timeline     []htmlSeg // per-phase latency segments (where the time went)
+	TotalMs      int64
 	Raw          []htmlCheck
+}
+
+// htmlSeg is one phase in a target's latency waterfall.
+type htmlSeg struct {
+	Class string
+	Label string
+	Ms    int64
+	Style template.CSS // pre-computed "width:NN%" (trusted CSS)
+}
+
+type phaseMs struct {
+	layer model.Layer
+	ms    int64
 }
 
 type htmlNode struct {
@@ -111,6 +126,7 @@ func buildHTMLView(r model.Report, order []string) htmlView {
 			failed = *res.FailedLayer
 		}
 		prevOK := false
+		var phases []phaseMs
 		for _, c := range res.Checks {
 			// Signal-path node.
 			n := htmlNode{Layer: upperLayer(c.Layer), LinkActive: prevOK}
@@ -148,6 +164,10 @@ func buildHTMLView(r model.Report, order []string) htmlView {
 			}
 			t.Raw = append(t.Raw, rc)
 
+			if !c.Skipped && c.ElapsedMs > 0 {
+				phases = append(phases, phaseMs{c.Layer, c.ElapsedMs})
+			}
+
 			// Error callout = the breakpoint's detail (FAIL only).
 			if res.Verdict == model.VerdictFail && !c.Skipped && !c.OK && c.Layer == failed {
 				if c.Error != "" {
@@ -155,6 +175,21 @@ func buildHTMLView(r model.Report, order []string) htmlView {
 				} else {
 					t.ErrorCallout = c.Detail
 				}
+			}
+		}
+		var total int64
+		for _, p := range phases {
+			total += p.ms
+		}
+		if total > 0 {
+			t.TotalMs = total
+			for _, p := range phases {
+				t.Timeline = append(t.Timeline, htmlSeg{
+					Class: segClass(p.layer),
+					Label: upperLayer(p.layer),
+					Ms:    p.ms,
+					Style: template.CSS(fmt.Sprintf("width:%.3f%%", float64(p.ms)/float64(total)*100)),
+				})
 			}
 		}
 		targets = append(targets, t)
@@ -213,6 +248,25 @@ func upperLayer(l model.Layer) string {
 		return "PROXY"
 	default:
 		return string(l)
+	}
+}
+
+// segClass maps a layer to its latency-waterfall color (a cool teal→violet ramp,
+// deliberately distinct from the green/amber/red status language).
+func segClass(l model.Layer) string {
+	switch l {
+	case model.LayerDNS:
+		return "seg-dns"
+	case model.LayerTCP:
+		return "seg-tcp"
+	case model.LayerProxy:
+		return "seg-proxy"
+	case model.LayerTLS:
+		return "seg-tls"
+	case model.LayerHTTP:
+		return "seg-http"
+	default:
+		return "seg-tcp"
 	}
 }
 
@@ -307,6 +361,18 @@ var htmlTemplate = template.Must(template.New("report").Parse(`<!doctype html>
   .node .lyr{font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.14em;color:var(--muted)}
   .node .tm{font-family:var(--mono);font-size:10.5px;color:var(--faint)}
 
+  /* latency waterfall: where the time went (cool palette, distinct from status) */
+  .timeline{margin-top:15px}
+  .tbar{display:flex;height:9px;border-radius:6px;overflow:hidden;background:var(--inset);border:1px solid var(--border)}
+  .seg{min-width:2px;height:100%}
+  .sw{width:8px;height:8px;border-radius:2px;display:inline-block;flex:none}
+  .seg-dns{background:#4cc9c0} .seg-tcp{background:#4aa3f0} .seg-proxy{background:#4aa3f0}
+  .seg-tls{background:#7b8cf4} .seg-http{background:#b07cf0}
+  .tlegend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:9px;
+    font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .tlegend .lg{display:inline-flex;align-items:center;gap:5px}
+  .tlegend .tot{color:var(--faint)}
+
   .summary{font-size:14px;margin:16px 0 0}
   .callout{font-family:var(--mono);font-size:12.5px;color:var(--fail);background:color-mix(in srgb,var(--fail) 10%,transparent);
     border:1px solid color-mix(in srgb,var(--fail) 35%,transparent);border-radius:8px;padding:9px 12px;margin-top:10px;
@@ -373,6 +439,12 @@ var htmlTemplate = template.Must(template.New("report").Parse(`<!doctype html>
       <div class="path">
         {{range .Nodes}}<div class="node {{.State}}{{if .Ring}} ring{{end}}{{if .LinkActive}} link{{end}}"><span class="mk">{{.Mark}}</span><span class="lyr">{{.Layer}}</span><span class="tm">{{.Timing}}</span></div>{{end}}
       </div>
+      {{if .Timeline}}
+      <div class="timeline">
+        <div class="tbar">{{range .Timeline}}<span class="seg {{.Class}}" style="{{.Style}}"></span>{{end}}</div>
+        <div class="tlegend">{{range .Timeline}}<span class="lg"><i class="sw {{.Class}}"></i>{{.Label}} {{.Ms}}ms</span>{{end}}<span class="lg tot">总计 {{.TotalMs}}ms</span></div>
+      </div>
+      {{end}}
       <p class="summary">{{.Summary}}</p>
       {{if .ErrorCallout}}<div class="callout">{{.ErrorCallout}}</div>{{end}}
       {{if .NoProxyNote}}<p class="note">⚠ {{.NoProxyNote}}</p>{{end}}
