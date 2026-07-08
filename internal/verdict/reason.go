@@ -96,6 +96,11 @@ func Explain(reason model.ReasonCode) Explanation {
 			"检测到系统代理已开启，但环境变量代理为空；浏览器可能能上，但 Codex/Claude CLI 可能不走代理。",
 			"如需让 CLI 走同一代理，请设置 HTTPS_PROXY=http://host:port，或用 --proxy system 进行测试。",
 		}
+	case model.ReasonQuotaLimitReached:
+		return Explanation{
+			"本地额度记录显示相关限流窗口已用尽——此时的中断多半是额度、不是网络。",
+			"等待窗口重置，或切换到额度充足的账号 / 套餐；网络本身没有问题。",
+		}
 	case model.ReasonTransparentProxySuspected:
 		return Explanation{
 			"疑似透明代理 / TUN（fake-ip）：未配置任何代理，但流量很可能被隧道接管。",

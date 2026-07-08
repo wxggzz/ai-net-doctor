@@ -40,6 +40,11 @@ go install github.com/wxggzz/ai-net-doctor/cmd/ai-net-doctor@latest
    - `network_path.mode` / `forced`, `diverged`, `transparent_proxy_suspected`.
    - `targets.<name>.verdict` (`OK`/`CHECK`/`FAIL`), `failed_layer`,
      `reason_code`, `latency_ms`, `path_mode`, `no_proxy_excluded`, `checks[]`.
+   - `targets.<name>.quota` — locally-read rate-limit windows (Codex only).
+     When `available`, relay each window's `label` + `used_percent` + reset; if
+     `expired`, note the number is stale (window has since reset). A
+     `QUOTA_LIMIT_REACHED` warning = reachable but quota spent: it's a limit
+     issue, not the network.
    - `warnings[]`, `remediation[]`, `credentials_present` (booleans only).
 
 3. Present, honoring the CLI verbatim:

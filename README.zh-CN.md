@@ -86,7 +86,17 @@ env 代理，否则直连；报告顶部会写明实际使用的 path mode。
 
 仅出现在 `warnings`、**不改变任何 target 判定**的路径级提示：
 `NO_PROXY_EXCLUDES_TARGET` · `ENV_SYSTEM_PROXY_DIVERGED` · `BUDGET_EXCEEDED` ·
-`SYSTEM_PROXY_SET_BUT_ENV_EMPTY` · `TRANSPARENT_PROXY_SUSPECTED`
+`SYSTEM_PROXY_SET_BUT_ENV_EMPTY` · `TRANSPARENT_PROXY_SUSPECTED` · `QUOTA_LIMIT_REACHED`
+
+### 额度维度（网络 / 认证之外的第三维）
+
+`stream disconnected` 有时不是网络、而是**额度用尽**。所以除了「网络 vs 认证」，
+本工具还会**只读本地文件**(Codex 自己写入 `~/.codex/sessions/` 的限流记录)拿到
+5 小时窗口与周窗口的**已用百分比 + 重置倒计时**——**不发任何 API 请求、不碰密钥 /
+keychain / 浏览器 cookie**。当某个可达 target 的额度窗口已用尽时,会给出
+`QUOTA_LIMIT_REACHED` 提示:「网络没问题,是额度到顶了」。快照若比窗口本身还旧,
+会标注「已重置」而非展示过期数字。Claude Code 不在本地持久化限流窗口,故如实标注
+「本地不可得」而不猜测。
 
 ### 透明代理 / TUN 提示
 
@@ -104,6 +114,7 @@ Clash / sing-box / Surge 等 TUN 模式的典型特征）时，报告会给出
   只报 `present: true/false`，绝不回显。
 - 代理 URL 中的 `user:pass` 会脱敏为 `***`。
 - 认证探测**不发送**任何密钥。
+- 额度只从**工具本地已写入的文件**（如 `~/.codex/sessions/`）读取——不发 API、不碰 keychain / cookie。
 
 ## 端点 / 变量（待官方确认）
 

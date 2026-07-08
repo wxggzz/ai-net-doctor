@@ -13,6 +13,7 @@ import (
 
 	"github.com/wxggzz/ai-net-doctor/internal/checks"
 	"github.com/wxggzz/ai-net-doctor/internal/model"
+	"github.com/wxggzz/ai-net-doctor/internal/quota"
 	"github.com/wxggzz/ai-net-doctor/internal/targets"
 	"github.com/wxggzz/ai-net-doctor/internal/verdict"
 )
@@ -132,6 +133,27 @@ func Run(ctx context.Context, opts Options) model.Report {
 	}
 	wg.Wait()
 
+	// Third dimension: attach each target's locally-read quota snapshot (no
+	// network, no credentials). It never changes a verdict; it only lets us add
+	// "the path is fine but the quota is spent" when a reachable target is
+	// rate-limited — the case where "stream disconnected" is not the network.
+	qr := quota.Reader{}
+	for _, name := range opts.Targets {
+		res, ok := report.Targets[name]
+		if !ok {
+			continue
+		}
+		q := qr.Read(name)
+		if q == nil {
+			continue
+		}
+		res.Quota = q
+		report.Targets[name] = res
+		if q.SuggestsBlock() && res.Verdict != model.VerdictFail {
+			warnSet[string(model.ReasonQuotaLimitReached)] = true
+		}
+	}
+
 	for w := range warnSet {
 		report.Warnings = append(report.Warnings, w)
 	}
@@ -148,6 +170,7 @@ func Run(ctx context.Context, opts Options) model.Report {
 		}
 	}
 	for _, reason := range []model.ReasonCode{
+		model.ReasonQuotaLimitReached,
 		model.ReasonTransparentProxySuspected,
 		model.ReasonSystemProxySetButEnvEmpty,
 		model.ReasonNoProxyExcludesTarget,

@@ -42,7 +42,13 @@ go install github.com/wxggzz/ai-net-doctor/cmd/ai-net-doctor@latest
      `transparent_proxy_hint` — path-level advisories.
    - `targets.<name>.verdict` (`OK`/`CHECK`/`FAIL`), `failed_layer`,
      `reason_code`, `latency_ms`, `path_mode`, `no_proxy_excluded`, `checks[]`.
-   - `warnings[]` and `remediation[]` — stable codes + ready-made advice.
+   - `targets.<name>.quota` — locally-read rate-limit windows (Codex only;
+     `available:false` for Claude). When `available`, relay each window's
+     `label` + `used_percent` + reset; if a window is `expired`, say the number
+     is stale (window has since reset), don't present it as current usage.
+   - `warnings[]` and `remediation[]` — stable codes + ready-made advice. A
+     `QUOTA_LIMIT_REACHED` warning means a reachable target's quota is spent —
+     say the network is fine and it's a quota/limit issue.
    - `credentials_present` — booleans only.
 
 3. Present, honoring the CLI verbatim:

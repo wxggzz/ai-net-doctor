@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"html/template"
+	"strings"
 
 	"github.com/wxggzz/ai-net-doctor/internal/model"
 	"github.com/wxggzz/ai-net-doctor/internal/verdict"
@@ -46,7 +47,23 @@ type htmlTarget struct {
 	Nodes        []htmlNode
 	Timeline     []htmlSeg // per-phase latency segments (where the time went)
 	TotalMs      int64
+	Quota        *htmlQuota // locally-read rate-limit windows (nil = none to show)
 	Raw          []htmlCheck
+}
+
+// htmlQuota is the render model for a target's quota panel.
+type htmlQuota struct {
+	Blocked bool
+	Meta    string // "plus · 快照 2h前"
+	Windows []htmlQuotaWin
+}
+
+type htmlQuotaWin struct {
+	Label   string
+	Percent int
+	Reset   string
+	Class   string       // fill color class: q-normal / q-high / q-full / q-expired
+	Style   template.CSS // pre-computed "width:NN%" (trusted CSS)
 }
 
 // htmlSeg is one phase in a target's latency waterfall.
@@ -191,6 +208,40 @@ func buildHTMLView(r model.Report, order []string) htmlView {
 					Style: template.CSS(fmt.Sprintf("width:%.3f%%", float64(p.ms)/float64(total)*100)),
 				})
 			}
+		}
+		if qv, ok := buildQuotaView(res.Quota); ok {
+			hq := &htmlQuota{Blocked: qv.Blocked}
+			var meta []string
+			if qv.Plan != "" {
+				meta = append(meta, qv.Plan)
+			}
+			if qv.Age != "" {
+				meta = append(meta, qv.Age)
+			}
+			hq.Meta = strings.Join(meta, " · ")
+			for _, w := range qv.Windows {
+				cls := "q-normal"
+				switch {
+				case w.Expired:
+					cls = "q-expired"
+				case w.Full:
+					cls = "q-full"
+				case w.Percent >= 80:
+					cls = "q-high"
+				}
+				width := w.Percent
+				if width > 100 {
+					width = 100
+				}
+				hq.Windows = append(hq.Windows, htmlQuotaWin{
+					Label:   w.Label,
+					Percent: w.Percent,
+					Reset:   w.Reset,
+					Class:   cls,
+					Style:   template.CSS(fmt.Sprintf("width:%d%%", width)),
+				})
+			}
+			t.Quota = hq
 		}
 		targets = append(targets, t)
 	}
@@ -373,6 +424,22 @@ var htmlTemplate = template.Must(template.New("report").Parse(`<!doctype html>
   .tlegend .lg{display:inline-flex;align-items:center;gap:5px}
   .tlegend .tot{color:var(--faint)}
 
+  /* quota: local rate-limit windows (a third dimension beside network/auth) */
+  .quota{margin-top:15px;padding-top:13px;border-top:1px dashed var(--border)}
+  .q-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:9px}
+  .q-eyebrow{font-family:var(--mono);font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--faint)}
+  .quota.blocked .q-eyebrow{color:var(--fail)}
+  .q-meta{font-family:var(--mono);font-size:11px;color:var(--faint)}
+  .q-row{display:flex;align-items:center;gap:10px;margin:6px 0}
+  .q-lbl{font-family:var(--mono);font-size:11px;color:var(--muted);width:3.6em;flex:none}
+  .q-track{flex:1;height:7px;border-radius:5px;background:var(--inset);border:1px solid var(--border);overflow:hidden}
+  .q-fill{display:block;height:100%;border-radius:5px}
+  .q-fill.q-normal{background:#4cc9c0} .q-fill.q-high{background:var(--warn)}
+  .q-fill.q-full{background:var(--fail)} .q-fill.q-expired{background:var(--track)}
+  .q-pct{font-family:var(--mono);font-size:11.5px;color:var(--text);width:3em;text-align:right;flex:none}
+  .q-reset{font-family:var(--mono);font-size:11px;color:var(--faint);width:8.5em;text-align:right;flex:none}
+  @media (max-width:480px){ .q-reset{display:none} }
+
   .summary{font-size:14px;margin:16px 0 0}
   .callout{font-family:var(--mono);font-size:12.5px;color:var(--fail);background:color-mix(in srgb,var(--fail) 10%,transparent);
     border:1px solid color-mix(in srgb,var(--fail) 35%,transparent);border-radius:8px;padding:9px 12px;margin-top:10px;
@@ -443,6 +510,19 @@ var htmlTemplate = template.Must(template.New("report").Parse(`<!doctype html>
       <div class="timeline">
         <div class="tbar">{{range .Timeline}}<span class="seg {{.Class}}" style="{{.Style}}"></span>{{end}}</div>
         <div class="tlegend">{{range .Timeline}}<span class="lg"><i class="sw {{.Class}}"></i>{{.Label}} {{.Ms}}ms</span>{{end}}<span class="lg tot">总计 {{.TotalMs}}ms</span></div>
+      </div>
+      {{end}}
+      {{with .Quota}}
+      <div class="quota{{if .Blocked}} blocked{{end}}">
+        <div class="q-head"><span class="q-eyebrow">额度 · quota</span>{{if .Meta}}<span class="q-meta">{{.Meta}}</span>{{end}}</div>
+        {{range .Windows}}
+        <div class="q-row">
+          <span class="q-lbl">{{.Label}}</span>
+          <span class="q-track"><span class="q-fill {{.Class}}" style="{{.Style}}"></span></span>
+          <span class="q-pct">{{.Percent}}%</span>
+          <span class="q-reset">{{.Reset}}</span>
+        </div>
+        {{end}}
       </div>
       {{end}}
       <p class="summary">{{.Summary}}</p>

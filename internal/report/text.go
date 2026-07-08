@@ -50,6 +50,9 @@ func Text(r model.Report, order []string, verbose bool) string {
 		if ex.Remediation != "" {
 			fmt.Fprintf(&b, "        → %s\n", ex.Remediation)
 		}
+		for _, ql := range quotaTextLines(res.Quota, verbose) {
+			b.WriteString(ql + "\n")
+		}
 		if verbose {
 			fmt.Fprintf(&b, "        实际路径: %s\n", pathModeDesc(res.PathMode, r.NetworkPath))
 			b.WriteString(waterfall(res))

@@ -55,6 +55,14 @@ verdict plus the first breakpoint.
 - **It catches the blind spots.** Transparent TUN / fake-ip proxies (Clash /
   sing-box / Surge), `NO_PROXY` bypass, and env-vs-system proxy divergence are
   all surfaced instead of quietly producing a misleading "direct" result.
+- **Quota, as a third dimension — read locally, no API, no credentials.** A
+  `stream disconnected` is sometimes a *spent quota*, not the network. So beyond
+  network-vs-auth, it reads the rate-limit windows Codex already writes to
+  `~/.codex/sessions/` (used %, reset countdown for the 5-hour and weekly
+  windows) and reports "reachable, but your window is spent" when that's the real
+  cause. It never sends an API call or reads a key/keychain; when a snapshot is
+  older than its window it says so instead of showing stale numbers. (Claude Code
+  doesn't persist this locally, so it says so rather than guess.)
 - **Trustworthy by construction.** The CLI computes every conclusion
   (`verdict` / `failed_layer` / `reason_code`); wrappers (skills, click entries)
   only display it. Zero third-party dependencies — Go standard library only.
@@ -175,12 +183,14 @@ See [integrations/README.md](./integrations/README.md) for install steps.
 
 **Path-level warnings (never change a verdict):** `NO_PROXY_EXCLUDES_TARGET` ·
 `ENV_SYSTEM_PROXY_DIVERGED` · `BUDGET_EXCEEDED` · `SYSTEM_PROXY_SET_BUT_ENV_EMPTY` ·
-`TRANSPARENT_PROXY_SUSPECTED`
+`TRANSPARENT_PROXY_SUSPECTED` · `QUOTA_LIMIT_REACHED`
 
 ## Security & privacy
 
 - Local-only. No telemetry, no upload.
 - The auth probe **sends no credentials**.
+- Quota is read **only from local files the tools already write** (e.g.
+  `~/.codex/sessions/`) — no API call, no keychain, no browser cookies.
 - Credentials (`OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN`)
   are reported as `present: true/false` only — never their values.
 - Proxy `user:pass` is redacted. The full environment is never dumped.

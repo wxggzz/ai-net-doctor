@@ -44,6 +44,21 @@ func MenuBar(r model.Report, order []string, self string) string {
 		if ex.Remediation != "" {
 			fmt.Fprintf(&b, "-- → %s | color=#aaaaaa\n", mbClean(ex.Remediation))
 		}
+		if v, ok := buildQuotaView(res.Quota); ok {
+			var parts []string
+			for _, w := range v.Windows {
+				seg := fmt.Sprintf("%s %d%%", w.Label, w.Percent)
+				if w.Reset != "" {
+					seg += " · " + w.Reset
+				}
+				parts = append(parts, seg)
+			}
+			color := "#8493ad"
+			if v.Blocked {
+				color = "#d1242f"
+			}
+			fmt.Fprintf(&b, "-- 额度: %s | color=%s\n", mbClean(strings.Join(parts, "  ·  ")), color)
+		}
 	}
 
 	b.WriteString("---\n")
