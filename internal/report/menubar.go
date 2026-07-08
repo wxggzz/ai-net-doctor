@@ -26,8 +26,10 @@ func MenuBar(r model.Report, order []string, self string) string {
 	}
 	overall := verdict.WorstVerdict(vs...)
 
-	// Menu-bar title: just the colored dot.
-	fmt.Fprintf(&b, "%s\n", dot(overall))
+	// Menu-bar title: the colored health dot, plus a one-cell quota "fuel gauge"
+	// when the path is reachable and we have a local quota reading — so a glance
+	// shows both "can I connect" and "how much quota is left".
+	fmt.Fprintf(&b, "%s\n", menuTitle(r, order, overall))
 	b.WriteString("---\n")
 
 	for _, name := range order {
@@ -78,6 +80,58 @@ func MenuBar(r model.Report, order []string, self string) string {
 	}
 	b.WriteString("Repo & help | href=https://github.com/wxggzz/ai-net-doctor\n")
 	return b.String()
+}
+
+// menuTitle builds the menu-bar title: the health dot, and — only when the path
+// is reachable (not FAIL) and a local quota reading exists — a compact remaining
+// indicator. It shows ⛔ when a window is actually spent, otherwise a single
+// 8-level "fuel" block for the tightest (most-used, still-valid) window.
+func menuTitle(r model.Report, order []string, overall model.Verdict) string {
+	title := dot(overall)
+	if overall == model.VerdictFail {
+		return title
+	}
+	remaining := -1.0
+	spent := false
+	for _, name := range order {
+		res, ok := r.Targets[name]
+		if !ok || res.Quota == nil {
+			continue
+		}
+		if res.Quota.SuggestsBlock() {
+			spent = true
+		}
+		for _, w := range res.Quota.Windows {
+			if w.Expired {
+				continue
+			}
+			if rem := 100 - w.UsedPercent; remaining < 0 || rem < remaining {
+				remaining = rem
+			}
+		}
+	}
+	switch {
+	case spent:
+		return title + "⛔"
+	case remaining >= 0:
+		return title + fuelGlyph(remaining)
+	default:
+		return title
+	}
+}
+
+// fuelGlyph maps a remaining-quota percentage to one of 8 block heights
+// (▁ nearly spent … █ full). Always visible for any remaining > 0.
+func fuelGlyph(remainingPct float64) string {
+	blocks := []rune("▁▂▃▄▅▆▇█")
+	idx := int(remainingPct/100*7 + 0.5)
+	if idx < 0 {
+		idx = 0
+	}
+	if idx > 7 {
+		idx = 7
+	}
+	return string(blocks[idx])
 }
 
 // dot is the colored status circle for the menu bar and per-target lines.

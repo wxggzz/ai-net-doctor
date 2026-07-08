@@ -167,7 +167,9 @@ they never re-derive the verdict. Both ship in this repo under
   ([`integrations/claude-code/`](./integrations/claude-code/network-doctor/)).
 - **Codex**: a personal plugin
   ([`integrations/codex/`](./integrations/codex/codex-network-doctor/)).
-- **macOS menu bar**: a SwiftBar/xbar dot you click — 🟢/🟡/🔴 for Codex & Claude
+- **macOS menu bar**: a SwiftBar/xbar dot you click — 🟢/🟡/🔴 for Codex & Claude,
+  with a one-cell quota fuel gauge beside it when reachable (`🟡▅` = healthy +
+  half quota left; `🟡⛔` = quota spent)
   ([`integrations/swiftbar/`](./integrations/swiftbar/)).
 
 See [integrations/README.md](./integrations/README.md) for install steps.
